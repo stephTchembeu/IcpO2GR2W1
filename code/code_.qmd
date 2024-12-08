@@ -1,0 +1,867 @@
+---
+title: "IcpO2GR2W1"
+format: pdf
+editor: visual
+---
+
+```{r}
+# clean our environment memory before starting work
+rm(list=ls())
+```
+
+```{r}
+# load data "Malaria.csv"
+df_malaria <- read.csv("/home/student/Documents/AIMS/review_block 2/supervised learning/assignments/assignment1/IcpO2GR2W1/code/data/Malaria-Data.csv")
+```
+
+```{r}
+# check types of variables
+classes <- data.frame(type = sapply(df_malaria, class))
+distinct_values <- data.frame(instances_ =sapply(df_malaria, function(x) length(unique(x))))
+
+cols <- cbind(classes,distinct_values)
+cols
+```
+
+All variable are cathegorical but not age
+
+```{r}
+# get the summary of age column since it is the only numerical variable
+summary(df_malaria$age)
+```
+
+```{r}
+library(ggplot2)
+# plot histogram for the age and the bar plot of the others
+cols_names <- colnames(df_malaria)
+plots<-list()
+for(col in cols_names){
+  if (col =="age"){
+    title_ = paste("Histogram of", col)
+  }else{
+    title_ = paste("bar plot of", col)
+  }
+    hist_plot <- ggplot(df_malaria, aes_string(x = col)) +
+geom_histogram(binwidth = 0.5, fill = "orange", color = "black") +
+labs(title = paste(title_), x = col, y = "Frequence")
+
+    plots[[length(plots) + 1]] <- hist_plot
+}
+plots
+```
+
+Here in the repport i will describe each plots
+
+```{r}
+# check for missing values
+check_missing <- function(df) {
+  number_of_missing <- sapply(df, function(x) sum(is.na(x)))
+  prop_missing <- number_of_missing/nrow(df) 
+  result <- data.frame(Number_of_missing = number_of_missing,Proportion = prop_missing)
+  return(result)
+}
+
+# Now we apply our function to the malaria data-set 
+check_missing(df_malaria)
+```
+
+```{r}
+# by using the package VIM to see a plot
+library(VIM)
+
+aggr(df_malaria,col=c("orange","black"),numbers=TRUE,sortVars=TRUE,label=names(df_malaria),cex.axis=.7,ylab=c("Histogram of Missing data","Pattern"))
+```
+
+```{r}
+# checking for duplicate 
+cat("There are ",sum(duplicated(df_malaria))," duplicated row in this malaria dataset.")
+```
+
+```{r}
+# split the data into train and test
+ind = sample(2, nrow(df_malaria),replace=T, prob=c(0.70,0.30))
+train_set = df_malaria[ind==1,]
+test_set = df_malaria[ind==2,]
+
+# check for their dimension
+cat("Dimension of the train set : ",dim(train_set)," \n")
+cat("Dimension of the test set : ",dim(test_set))
+```
+
+Second part
+
+```{r}
+library(reshape2)
+# feature selection 
+cor_matrix <- cor(df_malaria)
+cor_matrix <- melt(cor_matrix)
+cor_plot <- ggplot(cor_matrix,aes(x=Var1,y=Var2, fill=value)) + 
+    geom_tile(color="white",size=0.5) +
+    geom_text(aes(label = round(value, 1)), color = "black", size = 2) + 
+    scale_fill_gradient2(low="Orange",high="orange",mid="white",midpoint= 0, limit=c(-1,1),space="Lab",name="values intervale") +
+    theme_minimal() + 
+    labs(title = "Corelation Matrix") + 
+    coord_fixed()+
+    theme(
+    axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1),
+    axis.text.y = element_text(size = 10)
+  )
+# we show the plot
+cor_plot
+
+```
+
+All the variable are either almost zero correlated or zero correlated to the several_maleria variable. by this we can not see which variable are important for the model. So we run another test
+
+```{r}
+library(randomForest)
+model <- randomForest(severe_maleria ~ ., data = df_malaria)
+importance1 <- importance(model)
+print(importance1)
+```
+
+```{r}
+# Create a data frame for plotting
+importance_df <- data.frame(Variable = rownames(importance1), Importance = importance1[, "IncNodePurity"])
+
+# Plot the importance
+ggplot(importance_df, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "orange",color="black") +
+  coord_flip() + 
+  labs(title = "Variable Importance (IncNodePurity)", x = "Variables", y = "IncNodePurity") +
+  theme_minimal()
+
+```
+
+We take on this all the variable which have the increasing node purity more than two
+
+```{r}
+selected_feature <- importance1[importance1[, "IncNodePurity"] > 2, , drop = FALSE]
+selected_feature <- cbind(Feature = rownames(selected_feature), selected_feature)
+rownames(selected_feature) <- NULL
+selected_feature <- data.frame(selected_feature)
+selected_feature
+
+```
+
+```{r}
+library(caret)
+# Logistic Regression model
+set.seed(123)
+lrModel <- train(as.factor(severe_maleria)~., data=train_set, method="glm", preProc=c("center", "scale"))
+lrModel
+
+lrpred=predict(lrModel,newdata = test_set)
+lr.cM<- confusionMatrix(lrpred,as.factor(test_set$severe_maleria), positive = "1", mode="everything")
+#plot confusion matrix
+lr.cM$table
+fourfoldplot(lr.cM$table, col=rainbow(4), main="Imbalanced LR Confusion Matrix")
+```
+
+```{r}
+# Lvq model
+set.seed(123)
+lvqModel <- train(as.factor(severe_maleria)~., data=train_set, method="lvq", preProc=c("center", "scale"))
+lvqModel
+
+lvqpred=predict(lvqModel,newdata = test_set)
+lvq.cM<- confusionMatrix(lvqpred,as.factor(test_set$severe_maleria), positive = "1", mode="everything")
+#plot confusion matrix
+lvq.cM$table
+fourfoldplot(lvq.cM$table, col=rainbow(4), main="Imbalanced LVQ Confusion Matrix")
+```
+
+```{r}
+# Train k- Nearest Neigbour model
+set.seed(123)
+knnModel <- train(factor(severe_maleria)~., data=train_set, method="knn", preProc=c("center", "scale"))
+knnModel
+knnpred=predict(knnModel,newdata = test_set)
+knn.cM<- confusionMatrix(knnpred,as.factor(test_set$severe_maleria), positive = '1', mode='everything')
+#plot confusion matrix
+knn.cM$table
+fourfoldplot(knn.cM$table, col=rainbow(4), main="Imbalanced KNN Confusion Matrix")
+```
+
+```{r}
+# Train Random Forest model
+set.seed(123)
+RFModel <- train(factor(severe_maleria)~., data=train_set, method="rf", preProc=c("center", "scale"))
+RFModel
+RFpred=predict(RFModel,newdata = test_set)
+RF.cM<- confusionMatrix(RFpred,as.factor(test_set$severe_maleria), positive = '1', mode='everything')
+#plot confusion matrix
+RF.cM$table
+fourfoldplot(RF.cM$table, col=rainbow(4), main="Imbalanced Random Forest Matrix")
+```
+
+```{r}
+## Train Neural Net model
+set.seed(123)
+nnetModel <- train(factor(severe_maleria)~., data=train_set, method="nnet", preProc=c("center", "scale"))
+nnetModel
+nnetpred=predict(nnetModel,newdata = test_set)
+nnet.cM<- confusionMatrix(nnetpred,as.factor(test_set$severe_maleria), positive = '1', mode='everything')
+#plot confusion matrix
+nnet.cM$table
+fourfoldplot(nnet.cM$table, col=rainbow(4), main="Imbalanced neural network Confusion Matrix")
+```
+
+```{r}
+##Train Linear Discriminant Analysis model
+set.seed(123)
+ldaModel <- train(factor(severe_maleria)~., data=train_set, method="lda", preProc=c("center", "scale"))
+ldaModel
+ldapred=predict(ldaModel,newdata = test_set)
+lda.cM<- confusionMatrix(ldapred,as.factor(test_set$severe_maleria), positive = '1', mode='everything')
+#plot confusion matrix
+lda.cM$table
+fourfoldplot(lda.cM$table, col=rainbow(4), main="Imbalanced LDA Confusion Matrix")
+```
+
+```{r}
+##Train Naive Bayes model
+set.seed(123)
+nbModel <- train(factor(severe_maleria)~., data=train_set, method="nb",preProc=c("center", "scale"))
+nbModel
+nbpred=predict(nbModel,newdata = test_set)
+nb.cM<- confusionMatrix(nbpred,as.factor(test_set$severe_maleria), positive = '1', mode='everything')
+#plot confusion matrix
+nb.cM$table
+fourfoldplot(nb.cM$table, col=rainbow(4), main="Imbalanced Naive bayes Confusion Matrix")
+```
+
+```{r}
+library(lightgbm)
+library(caret)  
+# Prepare data for LightGBM
+train_x <- as.matrix(train_set[, -which(names(train_set) == "severe_maleria")])
+train_y <- as.numeric(train_set$severe_maleria)
+# Convert to LightGBM dataset format
+dtrain <- lgb.Dataset(data = train_x, label = train_y)
+# Train the model
+params <- list(objective = "binary", metric = "binary_error", learning_rate = 0.1,num_leaves = 31
+)
+LightGBMModel <- lgb.train(params = params,data = dtrain,nrounds = 100
+)
+# predicte
+test_x <- as.matrix(test_set[, -which(names(test_set) == "severe_maleria")])
+
+LightGBMpred <- predict(LightGBMModel, test_x)
+test_y <- as.numeric(test_set$severe_maleria) 
+# Convert probabilities to binary predictions
+LightGBMpred <- ifelse(LightGBMpred > 0.5, 1, 0)
+# Confusion Matrix
+LightGBM_CM <- confusionMatrix(factor(LightGBMpred),factor(test_y),positive = "1",mode = "everything"
+)
+print(LightGBM_CM)
+fourfoldplot(LightGBM_CM$table, col=rainbow(4), main="Imbalanced LightGBM Conf Mat")
+```
+
+```{r}
+##Train a Support vector machine
+set.seed(123)
+SvmModel <- train(factor(severe_maleria)~., data=train_set, method="svmRadial", preProc=c("center", "scale"), na.action = na.omit)
+SvmModel
+Svmpred= predict(SvmModel,newdata = test_set)
+SVM.cM<- confusionMatrix(Svmpred,as.factor(test_set$severe_maleria), positive = '1', mode='everything')
+SVM.cM
+#plot confusion matrix
+SVM.cM$table
+fourfoldplot(SVM.cM$table, col=rainbow(4), main="Imbalanced SVM Conf Mat")
+```
+
+```{r}
+set.seed(123)
+
+# Train Decision Tree Model
+TreeModel <- train(factor(severe_maleria) ~ ., data = train_set, 
+  method = "rpart",preProc = c("center", "scale"), 
+  na.action = na.omit
+)
+TreeModel
+# Predict on test data
+TreePred <- predict(TreeModel, newdata = test_set)
+# Confusion Matrix
+TreeCM <- confusionMatrix(
+  data = TreePred,reference = factor(test_set$severe_maleria),
+  positive = "1",mode = "everything"
+)
+
+# Display Confusion Matrix
+TreeCM$table
+fourfoldplot(TreeCM$table, col=rainbow(4), main="Imbalanced decision Tree Confusion Matrix")
+```
+
+```{r}
+# Initialize performance DataFrame
+performance <- data.frame(
+  model = character(),
+  accuracy = numeric(),
+  sensitivity = numeric(),
+  specificity = numeric(),
+  balanced_accuracy = numeric(),
+  precision = numeric(),
+  f1_score = numeric(),
+  mcc = numeric(),
+  stringsAsFactors = FALSE
+)
+
+list_model <- list(
+  LR=lrModel, 
+  LVQ= lvqModel,
+  RF=RFModel,
+  NN= nnetModel,
+  LDA =ldaModel,
+  KNN= knnModel,
+  NB=nbModel,
+  LGBM=LightGBMModel,
+  SVM=SvmModel,
+  DTree= TreeModel
+)
+
+# Iterate over models in the list
+for (model_name in names(list_model)) {
+  model <- list_model[[model_name]]
+  
+  # Handle confusion matrix objects separately
+  if ("table" %in% names(model)) {
+    cm <- model
+    accuracy <- cm$overall["Accuracy"]
+    sensitivity <- cm$byClass["Sensitivity"]
+    specificity <- cm$byClass["Specificity"]
+    b_accur <- (sensitivity + specificity) / 2
+    precision <- cm$byClass["Pos Pred Value"]
+    f1_score <- 2 * (precision * sensitivity) / (precision + sensitivity)
+    
+    # Extract TP, TN, FP, FN for MCC calculation
+    cm_table <- cm$table
+    TP <- cm_table[2, 2]
+    TN <- cm_table[1, 1]
+    FP <- cm_table[1, 2]
+    FN <- cm_table[2, 1]
+    mcc <- ((TP * TN) - (FP * FN)) / sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
+    
+    # Append performance metrics
+    performance <- rbind(performance, data.frame(
+      model = model_name,
+      accuracy = accuracy,
+      sensitivity = sensitivity,
+      specificity = specificity,
+      balanced_accuracy = b_accur,
+      precision = precision,
+      f1_score = f1_score,
+      mcc = mcc
+    ))
+  } else if ("method" %in% names(model)) {
+    # For trained models
+    predictions <- predict(model, newdata = test_set)
+    cm <- confusionMatrix(predictions, factor(test_set$severe_maleria), positive = "1", mode = "everything")
+    accuracy <- cm$overall["Accuracy"]
+    sensitivity <- cm$byClass["Sensitivity"]
+    specificity <- cm$byClass["Specificity"]
+    b_accur <- (sensitivity + specificity) / 2
+    precision <- cm$byClass["Pos Pred Value"]
+    f1_score <- 2 * (precision * sensitivity) / (precision + sensitivity)
+    
+    # Extract TP, TN, FP, FN for MCC calculation
+    cm_table <- cm$table
+    TP <- cm_table[2, 2]
+    TN <- cm_table[1, 1]
+    FP <- cm_table[1, 2]
+    FN <- cm_table[2, 1]
+    mcc <- ((TP * TN) - (FP * FN)) / sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
+    
+    # Append performance metrics
+    performance <- rbind(performance, data.frame(
+      model = model$method,
+      accuracy = accuracy,
+      sensitivity = sensitivity,
+      specificity = specificity,
+      balanced_accuracy = b_accur,
+      precision = precision,
+      f1_score = f1_score,
+      mcc
+    ))
+  }
+}
+performance
+```
+
+```{r}
+library(ROSE)
+## Oversampled
+over_sampled_data <- ovun.sample(factor(severe_maleria)~., data = df_malaria, method = "over")$data
+over_sampled_data
+```
+
+```{r}
+library(ggplot2)
+
+# Use aes() directly
+hist_plot <- ggplot(over_sampled_data, aes(x = severe_maleria)) +
+  geom_histogram(binwidth = 0.5, fill = "orange", color = "black") +
+  labs(title = title_, x = "severe_maleria", y = "Frequency")
+hist_plot
+```
+
+```{r}
+# split the data into train and test
+ind = sample(2, nrow(over_sampled_data),replace=T, prob=c(0.70,0.30))
+train_set_o = over_sampled_data[ind==1,]
+test_set_o = over_sampled_data[ind==2,]
+
+# check for their dimension
+cat("Dimension of the train set : ",dim(train_set_o)," \n")
+cat("Dimension of the test set : ",dim(test_set_o))
+```
+
+```{r}
+library(reshape2)
+cor_matrix <- cor(over_sampled_data)
+cor_matrix <- melt(cor_matrix)
+cor_plot <- ggplot(cor_matrix,aes(x=Var1,y=Var2, fill=value)) + 
+    geom_tile(color="white",size=0.5) +
+    geom_text(aes(label = round(value, 1)), color = "black", size = 2) + 
+    scale_fill_gradient2(low="Orange",high="orange",mid="white",midpoint= 0, limit=c(-1,1),space="Lab",name="values intervale") +
+    theme_minimal() + 
+    labs(title = "Corelation Matrix") + 
+    coord_fixed()+
+    theme(
+    axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1),
+    axis.text.y = element_text(size = 10)
+  )
+# we show the plot
+cor_plot
+
+```
+
+```{r}
+library(randomForest)
+model <- randomForest(severe_maleria ~ ., data = over_sampled_data)
+importance <- importance(model)
+print(importance)
+```
+
+```{r}
+library(ggplot2)
+# Create a data frame for plotting
+importance_df <- data.frame(Variable = rownames(importance), Importance = importance[, "IncNodePurity"])
+
+# Plot the importance
+ggplot(importance_df, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "orange",color="black") +
+  coord_flip() + 
+  labs(title = "Variable Importance (IncNodePurity)", x = "Variables", y = "IncNodePurity") +
+  theme_minimal()
+```
+
+```{r}
+selected_feature <- importance[importance[, "IncNodePurity"] > 2, , drop = FALSE]
+selected_feature <- cbind(Feature = rownames(selected_feature), selected_feature)
+rownames(selected_feature) <- NULL
+selected_feature <- data.frame(selected_feature)
+selected_feature
+```
+
+```{r}
+library(caret)
+# Logistic Regression model
+set.seed(123)
+lrModel2 <- train(as.factor(severe_maleria)~., data=train_set_o, method="glm", preProc=c("center", "scale"))
+lrModel2
+
+lrpred2=predict(lrModel2,newdata = test_set_o)
+lr.cM2<- confusionMatrix(lrpred2,as.factor(test_set_o$severe_maleria), positive = "1", mode="everything")
+#plot confusion matrix
+lr.cM2$table
+fourfoldplot(lr.cM2$table, col=rainbow(4), main="Imbalanced decision Tree Confusion Matrix")
+```
+
+```{r}
+# Lvq model
+set.seed(123)
+lvqModel2 <- train(as.factor(severe_maleria)~., data=train_set_o, method="lvq", preProc=c("center", "scale"))
+lvqModel2
+
+lvqpred2=predict(lvqModel2,newdata = test_set_o)
+lvq.cM2<- confusionMatrix(lvqpred2,as.factor(test_set_o$severe_maleria), positive = "1", mode="everything")
+#plot confusion matrix
+lvq.cM2$table
+fourfoldplot(lvq.cM2$table, col=rainbow(4), main="Imbalanced decision Tree Confusion Matrix")
+```
+
+```{r}
+# Train k- Nearest Neigbour model
+set.seed(123)
+knnModel2 <- train(factor(severe_maleria)~., data=train_set_o, method="knn", preProc=c("center", "scale"))
+knnModel2
+knnpred2=predict(knnModel2,newdata = test_set_o)
+knn.cM2<- confusionMatrix(knnpred2,as.factor(test_set_o$severe_maleria), positive = '1', mode='everything')
+#plot confusion matrix
+knn.cM2$table
+fourfoldplot(knn.cM2$table, col=rainbow(4), main="Imbalanced decision Tree Confusion Matrix")
+```
+
+```{r}
+# Train Random Forest model
+set.seed(123)
+RFModel2 <- train(factor(severe_maleria)~., data=train_set_o, method="rf", preProc=c("center", "scale"))
+RFModel2
+RFpred2=predict(RFModel2,newdata = test_set_o)
+RF.cM2<- confusionMatrix(RFpred2,as.factor(test_set_o$severe_maleria), positive = '1', mode='everything')
+#plot confusion matrix
+RF.cM2$table
+fourfoldplot(RF.cM2$table, col=rainbow(4), main="Imbalanced decision Tree Confusion Matrix")
+```
+
+```{r}
+## Train Neural Net model
+set.seed(123)
+nnetModel2 <- train(factor(severe_maleria)~., data=train_set_o, method="nnet", preProc=c("center", "scale"))
+nnetModel2
+nnetpred2=predict(nnetModel2,newdata = test_set_o)
+nnet.cM2<- confusionMatrix(nnetpred2,as.factor(test_set_o$severe_maleria), positive = '1', mode='everything')
+#plot confusion matrix
+nnet.cM2$table
+fourfoldplot(nnet.cM2$table, col=rainbow(4), main="Imbalanced decision Tree Confusion Matrix")
+```
+
+```{r}
+##Train Linear Discriminant Analysis model
+set.seed(123)
+ldaModel2 <- train(factor(severe_maleria)~., data=train_set_o, method="lda", preProc=c("center", "scale"))
+ldaModel2
+ldapred2=predict(ldaModel2,newdata = test_set_o)
+lda.cM2<- confusionMatrix(ldapred2,as.factor(test_set_o$severe_maleria), positive = '1', mode='everything')
+#plot confusion matrix
+lda.cM2$table
+fourfoldplot(lda.cM2$table, col=rainbow(4), main="Imbalanced decision Tree Confusion Matrix")
+```
+
+```{r}
+##Train Naive Bayes model
+set.seed(123)
+nbModel2 <- train(factor(severe_maleria)~., data=train_set_o, method="nb",preProc=c("center", "scale"))
+nbModel2
+nbpred2=predict(nbModel2,newdata = test_set_o)
+nb.cM2<- confusionMatrix(nbpred2,as.factor(test_set_o$severe_maleria), positive = '1', mode='everything')
+#plot confusion matrix
+nb.cM2$table
+fourfoldplot(nb.cM2$table, col=rainbow(4), main="Imbalanced decision Tree Confusion Matrix")
+```
+
+```{r}
+library(lightgbm)
+library(caret)  
+# Prepare data for LightGBM
+train_x2 <- as.matrix(train_set_o[, -which(names(train_set_o) == "severe_maleria")])
+train_y2 <- as.numeric(train_set_o$severe_maleria)
+# Convert to LightGBM dataset format
+dtrain2 <- lgb.Dataset(data = train_x2, label = train_y2)
+# Train the model
+params2 <- list(objective = "binary", metric = "binary_error", learning_rate = 0.1,num_leaves = 31
+)
+LightGBMModel2 <- lgb.train(params = params2,data = dtrain2,nrounds = 100
+)
+# predicte
+test_x2 <- as.matrix(test_set[, -which(names(test_set_o) == "severe_maleria")])
+LightGBMpred2 <- predict(LightGBMModel2, test_x2)
+# Convert probabilities to binary predictions
+LightGBMpred2 <- ifelse(LightGBMpred2 > 0.5, 1, 0)
+# Confusion Matrix
+LightGBM_CM2 <- confusionMatrix(factor(LightGBMpred2),factor(test_y),positive = "1",mode = "everything"
+)
+print(LightGBM_CM2)
+fourfoldplot(LightGBM_CM2$table, col=rainbow(4), main="Imbalanced decision Tree Confusion Matrix")
+```
+
+```{r}
+##Train a Support vector machine
+set.seed(123)
+SvmModel2 <- train(factor(severe_maleria)~., data=train_set_o, method="svmRadial", preProc=c("center", "scale"), na.action = na.omit)
+SvmModel2
+Svmpred2= predict(SvmModel2,newdata = test_set_o)
+SVM.cM2<- confusionMatrix(Svmpred2,as.factor(test_set_o$severe_maleria), positive = '1', mode='everything')
+SVM.cM2
+#plot confusion matrix
+SVM.cM2$table
+fourfoldplot(SVM.cM2$table, col=rainbow(4), main="Imbalanced decision Tree Confusion Matrix")
+```
+
+```{r}
+set.seed(123)
+
+# Train Decision Tree Model
+TreeModel2 <- train(factor(severe_maleria) ~ ., data = train_set_o, 
+  method = "rpart",preProc = c("center", "scale"), 
+  na.action = na.omit
+)
+TreeModel2
+# Predict on test data
+TreePred2 <- predict(TreeModel2, newdata = test_set_o)
+# Confusion Matrix
+TreeCM2 <- confusionMatrix(
+  data = TreePred2,reference = factor(test_set_o$severe_maleria),
+  positive = "1",mode = "everything"
+)
+
+# Display Confusion Matrix
+TreeCM2$table
+fourfoldplot(TreeCM2$table, col=rainbow(4), main="Imbalanced decision Tree Confusion Matrix")
+```
+
+```{r}
+# Initialize performance DataFrame
+performance2 <- data.frame(
+  model = character(),
+  accuracy = numeric(),
+  sensitivity = numeric(),
+  specificity = numeric(),
+  balanced_accuracy = numeric(),
+  precision = numeric(),
+  f1_score = numeric(),
+  mcc = numeric(),
+  stringsAsFactors = FALSE
+)
+
+list_model <- list(
+  LR=lrModel2, 
+  LVQ= lvqModel2,
+  RF=RFModel2,
+  NN= nnetModel2,
+  LDA =ldaModel2,
+  KNN= knnModel2,
+  NB=nbModel2,
+  LGBM=LightGBMModel2,
+  SVM=SvmModel2,
+  DTree= TreeModel2
+)
+
+# Iterate over models in the list
+for (model_name in names(list_model)) {
+  model <- list_model[[model_name]]
+  
+  # Handle confusion matrix objects separately
+  if ("table" %in% names(model)) {
+    cm <- model
+    accuracy <- cm$overall["Accuracy"]
+    sensitivity <- cm$byClass["Sensitivity"]
+    specificity <- cm$byClass["Specificity"]
+    b_accur <- (sensitivity + specificity) / 2
+    precision <- cm$byClass["Pos Pred Value"]
+    f1_score <- 2 * (precision * sensitivity) / (precision + sensitivity)
+    
+    # Extract TP, TN, FP, FN for MCC calculation
+    cm_table <- cm$table
+    TP <- cm_table[2, 2]
+    TN <- cm_table[1, 1]
+    FP <- cm_table[1, 2]
+    FN <- cm_table[2, 1]
+    mcc <- ((TP * TN) - (FP * FN)) / sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
+    
+    # Append performance metrics
+    performance2 <- rbind(performance2, data.frame(
+      model = model_name,
+      accuracy = accuracy,
+      sensitivity = sensitivity,
+      specificity = specificity,
+      balanced_accuracy = b_accur,
+      precision = precision,
+      f1_score = f1_score,
+      mcc = mcc
+    ))
+  } else if ("method" %in% names(model)) {
+    # For trained models
+    predictions <- predict(model, newdata = test_set)
+    cm <- confusionMatrix(predictions, factor(test_set$severe_maleria), positive = "1", mode = "everything")
+    accuracy <- cm$overall["Accuracy"]
+    sensitivity <- cm$byClass["Sensitivity"]
+    specificity <- cm$byClass["Specificity"]
+    b_accur <- (sensitivity + specificity) / 2
+    precision <- cm$byClass["Pos Pred Value"]
+    f1_score <- 2 * (precision * sensitivity) / (precision + sensitivity)
+    
+    # Extract TP, TN, FP, FN for MCC calculation
+    cm_table <- cm$table
+    TP <- cm_table[2, 2]
+    TN <- cm_table[1, 1]
+    FP <- cm_table[1, 2]
+    FN <- cm_table[2, 1]
+    mcc <- ((TP * TN) - (FP * FN)) / sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
+    
+    # Append performance metrics
+    performance2 <- rbind(performance2, data.frame(
+      model = model$method,
+      accuracy = accuracy,
+      sensitivity = sensitivity,
+      specificity = specificity,
+      balanced_accuracy = b_accur,
+      precision = precision,
+      f1_score = f1_score,
+      mcc
+    ))
+  }
+}
+performance2
+```
+
+```{r}
+# AUC and ROC
+predknn <- predict(knnModel2, newdata = test_set_o, type = "prob")
+# Create a prediction object needed by ROCR
+pred_knn <- prediction(predknn[, "1"], test_set_o$severe_maleria)
+# Calculate performance measures like ROC curve
+perf_knn <- performance(pred_knn, "tpr", "fpr")
+# Plot the ROC curve
+plot(perf_knn, colorize = TRUE, main = "ROC Curve of KNN")
+# Compute AUC
+auc_value <- performance(pred_knn, "auc")@y.values[[1]]
+auc_label <- paste("AUC =", round(auc_value, 2))
+# Add AUC value as text on the plot
+text(0.5, 0.3, auc_label, col = "blue", cex = 1.5)
+```
+
+```{r}
+# AUC and ROC
+predlr <- predict(lrModel2, newdata = test_set_o, type = "prob")
+# Create a prediction object needed by ROCR
+pred_lr <- prediction(predknn[, "1"], test_set_o$severe_maleria)
+# Calculate performance measures like ROC curve
+perf_lr <- performance(pred_knn, "tpr", "fpr")
+# Plot the ROC curve
+plot(perf_lr, colorize = TRUE, main = "ROC Curve of logistic regression")
+# Compute AUC
+auc_value <- performance(pred_lr, "auc")@y.values[[1]]
+auc_label <- paste("AUC =", round(auc_value, 2))
+# Add AUC value as text on the plot
+text(0.5, 0.3, auc_label, col = "blue", cex = 1.5)
+```
+
+```{r}
+# AUC and ROC
+predknn <- predict(lvqModel, newdata = test_set_o, type = "prob")
+# Create a prediction object needed by ROCR
+pred_knn <- prediction(predknn[, "1"], test_set_o$severe_maleria)
+# Calculate performance measures like ROC curve
+perf_knn <- performance(pred_knn, "tpr", "fpr")
+# Plot the ROC curve
+plot(perf_knn, colorize = TRUE, main = "ROC Curve of linear vector quantization after oversampling")
+# Compute AUC
+auc_value <- performance(pred_knn, "auc")@y.values[[1]]
+auc_label <- paste("AUC =", round(auc_value, 2))
+# Add AUC value as text on the plot
+text(0.5, 0.3, auc_label, col = "blue", cex = 1.5)
+```
+
+```{r}
+library(ROCR)
+# AUC and ROC
+predRF <- predict(RFModel2, newdata = test_set_o, type = "prob")
+# Create a prediction object needed by ROCR
+pred_RF <- prediction(predRF[, "1"], test_set_o$severe_maleria)
+# Calculate performance measures like ROC curve
+perf_RF <- performance(pred_RF, "tpr", "fpr")
+# Plot the ROC curve
+plot(perf_RF, colorize = TRUE, main = "ROC Curve of Random Forest")
+# Compute AUC
+auc_value <- performance(pred_RF, "auc")@y.values[[1]]
+auc_label <- paste("AUC =", round(auc_value, 2))
+# Add AUC value as text on the plot
+text(0.5, 0.3, auc_label, col = "blue", cex = 1.5)
+```
+
+```{r}
+# AUC and ROC
+predlda <- predict(ldaModel2, newdata = test_set_o, type = "prob")
+# Create a prediction object needed by ROCR
+pred_lda <- prediction(predlda[, "1"], test_set_o$severe_maleria)
+# Calculate performance measures like ROC curve
+perf_lda <- performance(pred_lda, "tpr", "fpr")
+# Plot the ROC curve
+plot(perf_lda, colorize = TRUE, main = "ROC Curve of LDA")
+# Compute AUC
+auc_value <- performance(pred_lda, "auc")@y.values[[1]]
+auc_label <- paste("AUC =", round(auc_value, 2))
+# Add AUC value as text on the plot
+text(0.5, 0.3, auc_label, col = "blue", cex = 1.5)
+```
+
+```{r}
+# AUC and ROC
+prednn <- predict(nnetModel2, newdata = test_set_o, type = "prob")
+# Create a prediction object needed by ROCR
+pred_nn <- prediction(prednn[, "1"], test_set_o$severe_maleria)
+# Calculate performance measures like ROC curve
+perf_nn <- performance(pred_nn, "tpr", "fpr")
+# Plot the ROC curve
+plot(perf_knn, colorize = TRUE, main = "ROC Curve of Neural Network")
+# Compute AUC
+auc_value <- performance(pred_nn, "auc")@y.values[[1]]
+auc_label <- paste("AUC =", round(auc_value, 2))
+# Add AUC value as text on the plot
+text(0.5, 0.3, auc_label, col = "blue", cex = 1.5)
+```
+
+```{r}
+library(ROCR)
+# AUC and ROC
+prednb <- predict(nbModel2, newdata = test_set_o, type = "prob")
+# Create a prediction object needed by ROCR
+pred_nb <- prediction(prednb[, "1"], test_set_o$severe_maleria)
+# Calculate performance measures like ROC curve
+perf_nb <- performance(pred_nb, "tpr", "fpr")
+# Plot the ROC curve
+plot(perf_nb, colorize = TRUE, main = "ROC Curve of naive baise after oversampling")
+# Compute AUC
+auc_value <- performance(pred_nb, "auc")@y.values[[1]]
+auc_label <- paste("AUC =", round(auc_value, 2))
+# Add AUC value as text on the plot
+text(0.5, 0.3, auc_label, col = "blue", cex = 1.5)
+```
+
+```{r}
+# AUC and ROC
+predlgbm <- predict(LightGBMModel2, newdata = test_set_o, type = "prob")
+# Create a prediction object needed by ROCR
+pred_lgbm <- prediction(predlgbm[, "1"], test_set_o$severe_maleria)
+# Calculate performance measures like ROC curve
+perf_lgbm <- performance(pred_lgbm, "tpr", "fpr")
+# Plot the ROC curve
+plot(perf_lgbm, colorize = TRUE, main = "ROC Curve of KNN")
+# Compute AUC
+auc_value <- performance(pred_lgbm, "auc")@y.values[[1]]
+auc_label <- paste("AUC =", round(auc_value, 2))
+# Add AUC value as text on the plot
+text(0.5, 0.3, auc_label, col = "blue", cex = 1.5)
+```
+
+```{r}
+predsvm <- predict(SvmModel2, newdata = test_set_o, type = "prob")
+# Create a prediction object needed by ROCR
+pred_svm <- prediction(predsvm[, "1"], test_set_o$severe_maleria)
+# Calculate performance measures like ROC curve
+perf_svm <- performance(pred_svm, "tpr", "fpr")
+# Plot the ROC curve
+plot(perf_svm, colorize = TRUE, main = "ROC Curve of KNN")
+# Compute AUC
+auc_value <- performance(pred_svm, "auc")@y.values[[1]]
+auc_label <- paste("AUC =", round(auc_value, 2))
+# Add AUC value as text on the plot
+text(0.5, 0.3, auc_label, col = "blue", cex = 1.5)
+```
+
+```{r}
+predtree <- predict(TreeModel2, newdata = test_set_o, type = "prob")
+# Create a prediction object needed by ROCR
+pred_tree <- prediction(predtree[, "1"], test_set_o$severe_maleria)
+# Calculate performance measures like ROC curve
+perf_tree <- performance(pred_tree, "tpr", "fpr")
+# Plot the ROC curve
+plot(perf_tree, colorize = TRUE, main = "ROC Curve of decision Tre")
+# Compute AUC
+auc_value <- performance(pred_tree, "auc")@y.values[[1]]
+auc_label <- paste("AUC =", round(auc_value, 2))
+# Add AUC value as text on the plot
+text(0.5, 0.3, auc_label, col = "blue", cex = 1.5)
+```
